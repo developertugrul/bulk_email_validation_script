@@ -1,0 +1,28 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+
+# Output files
+temizlenmis_eposta_listesi.csv
+sahte_eposta_listesi.csv
+Toplu Mailler.xlsx
+eposta_listesi.xlsx
+eposta_listesi.csv
