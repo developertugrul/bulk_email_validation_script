@@ -1,15 +1,15 @@
 # Import required libraries
-import csv                  # For CSV file operations
-import re                   # For regular expression operations
-import os                   # For operating system dependent functionality
-import socket              # For low-level networking interface
-import smtplib             # For SMTP protocol client
-import dns.resolver        # For DNS operations
-import threading           # For multi-threading support
-import queue               # For thread-safe queue implementation
-import requests            # For HTTP requests
+import csv  # For CSV file operations
+import re  # For regular expression operations
+import os  # For operating system dependent functionality
+import socket  # For low-level networking interface
+import smtplib  # For SMTP protocol client
+import dns.resolver  # For DNS operations
+import threading  # For multi-threading support
+import queue  # For thread-safe queue implementation
+import requests  # For HTTP requests
 from bs4 import BeautifulSoup  # For HTML parsing
-import tkinter as tk       # For GUI creation
+import tkinter as tk  # For GUI creation
 from tkinter import filedialog, ttk  # For file dialogs and themed widgets
 from dotenv import load_dotenv
 
@@ -18,8 +18,8 @@ load_dotenv()
 
 # Configuration settings
 CONFIG = {
-    "CHECK_TIMEOUT": int(os.getenv("CHECK_TIMEOUT", 5)),    # Default to 5 if not set
-    "THREAD_COUNT": int(os.getenv("THREAD_COUNT", 10)),    # Default to 10 if not set
+    "CHECK_TIMEOUT": int(os.getenv("CHECK_TIMEOUT", 5)),  # Default to 5 if not set
+    "THREAD_COUNT": int(os.getenv("THREAD_COUNT", 10)),  # Default to 10 if not set
     "SMTP_SETTINGS": {
         "SERVER": os.getenv("SMTP_SERVER"),
         "PORT": int(os.getenv("SMTP_PORT", 465)),
@@ -27,6 +27,7 @@ CONFIG = {
         "PASSWORD": os.getenv("SMTP_PASSWORD")
     }
 }
+
 
 # Validate required environment variables
 def validate_config():
@@ -37,27 +38,29 @@ def validate_config():
         "SMTP_USER",
         "SMTP_PASSWORD"
     ]
-    
+
     missing_vars = [var for var in required_vars if not os.getenv(var)]
-    
+
     if missing_vars:
         raise EnvironmentError(
             f"Missing required environment variables: {', '.join(missing_vars)}\n"
             "Please check your .env file."
         )
 
+
 # Call validation at startup
 validate_config()
 
 # DNS & SMTP Caches
-checked_domains = {}       # Cache dictionary to store previously checked domains
-checked_emails = set()     # Set to store previously checked email addresses
+checked_domains = {}  # Cache dictionary to store previously checked domains
+checked_emails = set()  # Set to store previously checked email addresses
 
 # Thread-safe Queue
 email_queue = queue.Queue()  # Queue for managing email processing across threads
 
 # Processed Emails
-processed_emails = set()   # Set to store all processed emails (both valid and invalid)
+processed_emails = set()  # Set to store all processed emails (both valid and invalid)
+
 
 # ---------------------------------------------------------------------------------
 # DESKTOP APPLICATION (Tkinter)
@@ -68,6 +71,7 @@ class EmailCheckerApp(tk.Tk):
     Main application class for the Email Checker GUI
     Inherits from tkinter.Tk for window management
     """
+
     def __init__(self):
         """
         Initialize the application window and create the GUI elements
@@ -236,15 +240,18 @@ def domain_log(msg: str):
     app.domain_text.insert(tk.END, msg + "\n")
     app.domain_text.see(tk.END)
 
+
 def email_log(msg: str):
     """E-posta loglarını E-posta paneline yazar."""
     app.email_text.insert(tk.END, msg + "\n")
     app.email_text.see(tk.END)
 
+
 def valid_log(msg: str):
     """Geçerli e-postaları Valid paneline yazar."""
     app.valid_text.insert(tk.END, msg + "\n")
     app.valid_text.see(tk.END)
+
 
 def main_log(msg: str):
     """Genel logları (hata, uyarı vb.) Log paneline yazar."""
@@ -288,6 +295,7 @@ def get_mx_or_a_record(domain: str) -> str | None:
         checked_domains[domain] = None
         return None
 
+
 def get_website_title(domain: str) -> str:
     email_log(f"🌐 Title Alınıyor: {domain}")
     for scheme in ['http://', 'https://']:
@@ -303,9 +311,11 @@ def get_website_title(domain: str) -> str:
     email_log(f"❌ Title Yok: {domain}")
     return "Title Unavailable"
 
+
 def is_valid_email_format(email: str) -> bool:
     pattern = r"^[a-zA-Z0-9_.+\-]+@[a-zA-Z0-9\-]+\.[a-zA-Z0-9\-.]+$"
     return bool(re.match(pattern, email))
+
 
 def validate_email(email: str) -> bool:
     email_log(f"📧 Kontrol: {email}")
