@@ -18,21 +18,19 @@ A robust email validation tool with a graphical user interface that performs com
   - Log panel
 - 📁 CSV file processing
 - 🔄 Duplicate check prevention
+- 🔐 Environment-based configuration
 
 ## Requirements
 
 - Python 3.8+
-- Required packages:
-  ```bash
-  pip install dnspython requests beautifulsoup4
-  ```
+- Required packages are listed in requirements.txt
 
 ## Installation
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/email-validator.git
-   cd email-validator
+   git clone https://github.com/developertugrul/bulk_email_validation_script.git
+   cd bulk_email_validation_script
    ```
 
 2. Install dependencies:
@@ -40,15 +38,32 @@ A robust email validation tool with a graphical user interface that performs com
    pip install -r requirements.txt
    ```
 
-3. Configure SMTP settings in `main.py`:
-   ```python
-   "SMTP_SETTINGS": {
-       "SERVER": "your.smtp.server",
-       "PORT": 465,
-       "USER": "your.email@domain.com",
-       "PASSWORD": "your-password"
-   }
+3. Set up environment variables:
+   ```bash
+   # Copy the example environment file
+   cp .env.example .env
+   
+   # Edit .env file with your settings
+   nano .env
    ```
+
+## Environment Configuration
+
+Create a `.env` file in the root directory with the following variables:
+
+```env
+# Timeout Settings
+CHECK_TIMEOUT=5
+THREAD_COUNT=10
+
+# SMTP Settings
+SMTP_SERVER=your.smtp.server
+SMTP_PORT=465
+SMTP_USER=your.email@domain.com
+SMTP_PASSWORD=your-password
+```
+
+All settings are required. The application will validate these settings on startup.
 
 ## Usage
 
@@ -72,12 +87,16 @@ example@domain.com
 test@domain.com
 ```
 
-## Configuration
+## Configuration Options
 
-You can modify the following settings in the CONFIG dictionary:
-- `CHECK_TIMEOUT`: DNS & SMTP timeout in seconds
-- `THREAD_COUNT`: Number of parallel threads
-- `SMTP_SETTINGS`: SMTP server configuration
+The following settings can be configured in your `.env` file:
+
+- `CHECK_TIMEOUT`: DNS & SMTP timeout in seconds (default: 5)
+- `THREAD_COUNT`: Number of parallel threads (default: 10)
+- `SMTP_SERVER`: SMTP server address for email validation
+- `SMTP_PORT`: SMTP server port (default: 465)
+- `SMTP_USER`: SMTP authentication username
+- `SMTP_PASSWORD`: SMTP authentication password
 
 ## Output Files
 
@@ -88,6 +107,12 @@ You can modify the following settings in the CONFIG dictionary:
 
 2. `sahte_eposta_listesi.csv`:
    - Invalid email addresses
+
+## Security Notes
+
+- Never commit your `.env` file to version control
+- The `.env.example` file is provided as a template
+- Sensitive information should only be stored in your local `.env` file
 
 ## License
 
@@ -104,3 +129,9 @@ Tugrul Yildirim
 3. Commit your changes
 4. Push to the branch
 5. Create a new Pull Request
+
+## Development Notes
+
+- The `.gitignore` file is configured to exclude sensitive files
+- Make sure to update `.env.example` if you add new configuration options
+- Run `validate_config()` before accessing any environment variables
