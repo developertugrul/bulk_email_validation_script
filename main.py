@@ -167,14 +167,21 @@ def is_valid_email_format(email: str) -> bool:
 # -----------------------------------------------------------------------------
 # DNS and SMTP Checking Functions
 # -----------------------------------------------------------------------------
+def is_valid_domain(domain):
+    # Geliştirilmiş ve alt alan adlarına izin veren domain regex'i
+    domain_regex = r'^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63})*\.[A-Za-z]{2,}$'
+    return bool(re.match(domain_regex, domain))
+
+
 def get_mx_or_a_record(domain: str) -> str | None:
     """
     Tries to retrieve the MX record for a domain. If none found, tries A record.
-    Caches results in 'checked_domains'. Returns:
-        - MX server string if found,
-        - IP address if no MX but A record exists,
-        - None if no DNS record is found.
+    Returns None if both attempts fail.
     """
+    if not domain or not is_valid_domain(domain):
+        domain_log(f"⚠️ Invalid domain skipped: {domain}")
+        return None
+
     if domain in checked_domains:
         return checked_domains[domain]
 
@@ -190,22 +197,22 @@ def get_mx_or_a_record(domain: str) -> str | None:
         domain_log(f"✅ MX: {domain} -> {mx_server}")
         return mx_server
     except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.LifetimeTimeout):
-        domain_log(f"⚠️ No MX: {domain}")
+        domain_log(f"⚠️ No MX record for domain: {domain}")
     except dns.resolver.NoNameservers:
         domain_log(f"❌ DNS did not respond: {domain}")
-        checked_domains[domain] = None
-        return None
 
-    # Try A record
+    # Try A record as fallback
     try:
         a_record = socket.gethostbyname(domain)
         checked_domains[domain] = a_record
-        domain_log(f"✅ A: {domain} -> {a_record}")
+        domain_log(f"✅ A record found: {domain} -> {a_record}")
         return a_record
     except (socket.gaierror, dns.resolver.NoAnswer, dns.resolver.LifetimeTimeout):
-        domain_log(f"❌ No MX/A: {domain}")
-        checked_domains[domain] = None
-        return None
+        domain_log(f"❌ No MX/A record found: {domain}")
+
+    checked_domains[domain] = None
+    return None
+
 
 
 def get_website_title(domain: str) -> str:
@@ -227,6 +234,11 @@ def get_website_title(domain: str) -> str:
     email_log(f"❌ No title: {domain}")
     return "Title Unavailable"
 
+def is_valid_email(email):
+    # Basit bir e-posta regex doğrulama
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(email_regex, email))
+
 
 def validate_email(email: str) -> bool:
     """
@@ -236,6 +248,9 @@ def validate_email(email: str) -> bool:
       3) SMTP handshake on ports 25, 587, 465
     Returns True if any SMTP check is successful, False otherwise.
     """
+    if not is_valid_email(email):
+        raise ValueError(f"Invalid email format: {email}")
+
     email_log(f"📧 Checking: {email}")
 
     # 1) Format
@@ -411,31 +426,34 @@ class EmailCheckerApp(tk.Tk):
         main_log("🚀 All operations completed!")
 
     def process_email_queue(self):
-        """
-        Worker function that continuously reads emails from the queue
-        and performs validation until it encounters None.
-        """
         while True:
             email = email_queue.get()
             if email is None:
+                email_queue.task_done()
                 break
 
-            if validate_email(email):
-                domain = email.split("@")[-1]
-                title = get_website_title(domain)
-                with open("temizlenmis_eposta_listesi.csv", "a", newline="", encoding="utf-8") as f_valid:
-                    writer = csv.writer(f_valid)
-                    writer.writerow([email, domain, title])
-                valid_log(f"✔ {email} => Valid (Domain: {domain}, Title: {title})")
-                processed_emails.add(email)
-            else:
-                with open("sahte_eposta_listesi.csv", "a", newline="", encoding="utf-8") as f_invalid:
-                    writer = csv.writer(f_invalid)
-                    writer.writerow([email])
-                main_log(f"❌ {email} => Invalid")
+            try:
+                if validate_email(email):
+                    domain = email.split("@")[-1]
+                    title = get_website_title(domain)
+                    with open("temizlenmis_eposta_listesi.csv", "a", newline="", encoding="utf-8") as f_valid:
+                        writer = csv.writer(f_valid)
+                        writer.writerow([email, domain, title])
+                    valid_log(f"✔ {email} => Valid (Domain: {domain}, Title: {title})")
+                else:
+                    with open("sahte_eposta_listesi.csv", "a", newline="", encoding="utf-8") as f_invalid:
+                        writer = csv.writer(f_invalid)
+                        writer.writerow([email])
+                    main_log(f"❌ {email} => Invalid")
+
                 processed_emails.add(email)
 
-            email_queue.task_done()
+            # Exception Handling
+            except Exception as e:
+                main_log(f"⚠️ Error processing {email}: {e}")
+
+            finally:
+                email_queue.task_done()
 
 
 # -----------------------------------------------------------------------------
@@ -614,49 +632,84 @@ class DomainScraperApp(tk.Toplevel):
         return False
 
     def _scrape_website(self, domain: str) -> set:
-        discovered = set()
+        """
+        Scrapes the homepage and internal links for valid email addresses.
+        Stops scanning the domain immediately after discovering at least one email.
+        """
         visited_urls = set()
+        base_urls = [f"http://{domain}", f"https://{domain}"]
 
-        base_http = f"http://{domain}"
-        base_https = f"https://{domain}"
-
-        for base_url in [base_http, base_https]:
+        for base_url in base_urls:
             try:
-                self._log_to_text(self.visited_page_text, f"Visiting => {base_url}")
-                resp = requests.get(base_url, timeout=5, allow_redirects=True)
-                if 200 <= resp.status_code < 400:
-                    new_emails = self._find_emails_in_html(resp.text)
-                    discovered.update(new_emails)
+                self._log_to_text(self.visited_page_text, f"Visiting homepage: {base_url}")
+                response = requests.get(base_url, timeout=5, allow_redirects=True)
 
-                    soup = BeautifulSoup(resp.text, "html.parser")
+                if 200 <= response.status_code < 400:
+                    emails_found = self._find_emails_in_html(response.text)
+                    if emails_found:
+                        self._log_to_text(self.discovered_email_text, f"Emails found: {emails_found}")
+                        return emails_found  # Found email, stop further crawling immediately.
+
+                    # No email found on homepage, continue to internal links
+                    soup = BeautifulSoup(response.text, "html.parser")
                     links = soup.find_all("a", href=True)
+
                     for link in links:
-                        href = link["href"]
-                        if href.startswith("/"):
-                            full_url = base_url + href
-                            if full_url not in visited_urls:
-                                visited_urls.add(full_url)
-            except:
-                pass
+                        href = link["href"].strip()
 
-        for url in visited_urls:
-            try:
-                self._log_to_text(self.visited_page_text, f"Visiting => {url}")
-                resp = requests.get(url, timeout=5, allow_redirects=True)
-                if 200 <= resp.status_code < 400:
-                    new_emails = self._find_emails_in_html(resp.text)
-                    discovered.update(new_emails)
-            except:
-                continue
+                        # Skip external links or files
+                        if not href.startswith("/"):
+                            continue
+                        if self._is_unwanted_file(href):
+                            continue
 
-        return discovered
+                        full_url = base_url + href
+                        if full_url in visited_urls:
+                            continue
+
+                        visited_urls.add(full_url)
+
+                        # Visit internal link
+                        self._log_to_text(self.visited_page_text, f"Visiting internal link: {full_url}")
+                        internal_resp = requests.get(full_url, timeout=5, allow_redirects=True)
+
+                        if 200 <= internal_resp.status_code < 400:
+                            emails_found = self._find_emails_in_html(internal_resp.text)
+                            if emails_found:
+                                self._log_to_text(self.discovered_email_text, f"Emails found: {emails_found}")
+                                return emails_found  # Found email, stop further crawling immediately.
+
+            except requests.RequestException as e:
+                self._log_to_text(self.visited_page_text, f"Request error ({base_url}): {e}")
+                continue  # Continue to next base URL (http/https)
+
+        # No emails found after scanning homepage and internal links
+        self._log_to_text(self.discovered_email_text, f"No email found: {domain}")
+        return set()
+
+    def _is_unwanted_file(self, url: str) -> bool:
+        """
+        Checks if the URL points to unwanted file types.
+        Returns True if unwanted, else False.
+        """
+        unwanted_extensions = (
+            ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".bmp", ".ico",
+            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+            ".zip", ".rar", ".tar", ".gz", ".7z",
+            ".mp3", ".mp4", ".avi", ".mkv", ".mov",
+            ".css", ".js", ".json", ".xml"
+        )
+        return url.lower().endswith(unwanted_extensions)
 
     def _find_emails_in_html(self, html_content: str) -> set:
+        """
+        Extracts email addresses from HTML content and ensures their validity.
+        """
         email_pattern = r"\b[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+\b"
-        found = re.findall(email_pattern, html_content)
+        potential_emails = re.findall(email_pattern, html_content)
 
-        valid_emails = set(filter(is_valid_email_format, found))
-
+        # Only valid email formats pass through
+        valid_emails = set(filter(is_valid_email_format, potential_emails))
         return valid_emails
 
 # -----------------------------------------------------------------------------
