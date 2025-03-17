@@ -168,9 +168,9 @@ def is_valid_email_format(email: str) -> bool:
 # DNS and SMTP Checking Functions
 # -----------------------------------------------------------------------------
 def is_valid_domain(domain):
-    # Geliştirilmiş ve alt alan adlarına izin veren domain regex'i
     domain_regex = r'^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63})*\.[A-Za-z]{2,}$'
     return bool(re.match(domain_regex, domain))
+
 
 
 def get_mx_or_a_record(domain: str) -> str | None:
@@ -535,13 +535,7 @@ class DomainScraperApp(tk.Toplevel):
     # Core Domain Analysis
     # ---------------------
     def _process_fake_emails_in_thread(self, file_path: str):
-        """
-        Reads fake emails from a CSV, checks if their domains exist, and if so,
-        scrapes them for discoverable email addresses. Results are stored in:
-          - kesfedilen_eposta_adresleri.csv
-          - kontrol_edilmis_sahte_domainler.csv
-        """
-        # 1) Load previously checked domains from kontrol_edilmis_sahte_domainler.csv
+        # 1) Load previously checked domains
         checked_fake_domains = set()
         if os.path.exists("kontrol_edilmis_sahte_domainler.csv"):
             with open("kontrol_edilmis_sahte_domainler.csv", "r", encoding="utf-8") as f:
@@ -557,32 +551,34 @@ class DomainScraperApp(tk.Toplevel):
                 email = row["email"].strip()
                 domain = email.split("@")[-1]
 
+                # EKLENEN KONTROL: Geçerli domain formatı mı?
+                if not is_valid_domain(domain):
+                    self._log_to_text(self.email_text, f"Geçersiz domain formatı => {domain}")
+                    continue
+
                 self._log_to_text(self.email_text, f"Processing => {email}")
 
-                # Skip if domain already checked
+                # Alan adı daha önce incelenmiş mi?
                 if domain in checked_fake_domains:
                     self._log_to_text(self.domain_text, f"Skipped (Previously checked): {domain}")
                     continue
 
-                # Check domain reachability
+                # Domain ulaşılabilir mi?
                 if not self._is_domain_reachable(domain):
                     self._log_to_text(self.domain_text, f"Domain not reachable: {domain}")
-                    # Mark domain as checked
                     checked_fake_domains.add(domain)
                     self._append_to_csv("kontrol_edilmis_sahte_domainler.csv", [domain])
                     continue
 
-                # Check if website is alive
+                # Site ayakta mı?
                 if self._check_website(domain):
                     discovered_emails = self._scrape_website(domain)
-                    # Store discovered emails
                     for found in discovered_emails:
                         self._log_to_text(self.discovered_email_text, f"Discovered => {found}")
                         self._append_to_csv("kesfedilen_eposta_adresleri.csv", [found])
                 else:
                     self._log_to_text(self.domain_text, f"No response from site: {domain}")
 
-                # Mark domain as checked
                 checked_fake_domains.add(domain)
                 self._append_to_csv("kontrol_edilmis_sahte_domainler.csv", [domain])
 
@@ -635,9 +631,12 @@ class DomainScraperApp(tk.Toplevel):
         """
         Scrapes the homepage and internal links for valid email addresses.
         Stops scanning the domain immediately after discovering at least one email.
+        Limits the number of links scanned to a maximum of 500.
         """
         visited_urls = set()
         base_urls = [f"http://{domain}", f"https://{domain}"]
+        max_links = 500
+        link_count = 0
 
         for base_url in base_urls:
             try:
@@ -655,6 +654,10 @@ class DomainScraperApp(tk.Toplevel):
                     links = soup.find_all("a", href=True)
 
                     for link in links:
+                        if link_count >= max_links:
+                            self._log_to_text(self.visited_page_text, f"Reached max link limit: {max_links}")
+                            return set()
+
                         href = link["href"].strip()
 
                         # Skip external links or files
@@ -668,6 +671,7 @@ class DomainScraperApp(tk.Toplevel):
                             continue
 
                         visited_urls.add(full_url)
+                        link_count += 1
 
                         # Visit internal link
                         self._log_to_text(self.visited_page_text, f"Visiting internal link: {full_url}")
